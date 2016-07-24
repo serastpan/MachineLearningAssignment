@@ -1,0 +1,140 @@
+---
+title: "Activity Prediction"
+author: "Sergio Astorga"
+date: "24th July 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("C:/Users/Sergio/Dropbox/Cursos/Big Data/8.- Practical Machine Learning/Assignment")
+```
+
+## Overview
+
+The study in which this project is inspired is based on characterise if a sport activity is well performed or not. Our study will be based in an already collected data by Velloso et al. who gathered information of 6 subjects practising the exercise in an appropiate way and exercising incorrectly.
+The aim is to predict which kind of activity is being performed by providing some movement variables.
+
+## Data
+
+For the data acquisition, the authors used some gadgets attached to the subject following the schema shown in the next figure:
+
+<img src="./fig1.png"/>
+
+The subjects performed a series of 10 repetitions Unilateral Dumbbell Biceps Curl in five ways. A is the correct way to practise the activity.
+
+## Exploratory data Analysis
+
+Before carrying out the analysis, an EDA will be conducted to decide which variables will be considered in the prediction model. First we loaded the data and see how many variables has the data.
+
+```{r, echo=TRUE}
+training <- read.csv("./pml-training.csv")
+testing <- read.csv("./pml-testing.csv")
+
+str(training)
+dim(training)
+```
+
+The data has 160 variables: some of them are factors and other numeric. The function str gives an overall view very accurate of the data:
+
+We see that the first variables are related with the time as the data was collected as a time series. Then data registered in the belt is displayed. After this it is turn for the data got in the arm. Data from the dumbbell is shown after this. Finally, the data registered in the forearm and a variable indicating the class of the exercise.
+
+It is worthy explain that after an analysis of the data, almost any variable will explain very well which exercise has been performed but, we will try to develop a method to get some representative variables to perform our model.
+
+The study which is going to be carried out will not take into account the time series and each exercise will be considered in its own. It means that all the variables depending on the time or/and on the subject will be removed.
+
+Moreover, in the paper they said that some of the variables were derived from the actuals measured. Those variables will also be removed from the data frame to compute the model: these measures are related with max, min, amplitude, average, standard deviation or variance.
+
+```{r, echo=FALSE}
+varNames <- c("roll_belt", "pitch_belt", "yaw_belt", "gyros_belt_x", "gyros_belt_y",
+              "gyros_belt_z", "accel_belt_x", "accel_belt_y", "accel_belt_z",
+              "magnet_belt_x", "magnet_belt_y", "magnet_belt_z", "roll_arm", "pitch_arm",
+              "yaw_arm", "gyros_arm_x", "gyros_arm_y", "gyros_arm_z", "accel_arm_x",
+              "accel_arm_y", "accel_arm_z", "magnet_arm_x", "magnet_arm_y",
+              "magnet_arm_z", "roll_dumbbell", "pitch_dumbbell", "yaw_dumbbell",
+              "gyros_dumbbell_x", "gyros_dumbbell_y", "gyros_dumbbell_z",
+              "accel_dumbbell_x", "accel_dumbbell_y", "accel_dumbbell_z",
+              "magnet_dumbbell_x", "magnet_dumbbell_y", "magnet_dumbbell_z",
+              "roll_forearm", "pitch_forearm", "yaw_forearm", "gyros_forearm_x",
+              "gyros_forearm_y", "gyros_forearm_z", "accel_forearm_x", "accel_forearm_y",
+              "accel_forearm_z", "magnet_forearm_x", "magnet_forearm_y",
+              "magnet_forearm_z","classe")
+
+training2 <- training[,names(training) %in% varNames]
+
+dim(training2)
+```
+
+After this, the dataset will be reduced in aproximately 70% and now its number of variables will be 49 and none of them will contain missing values (NAs).
+
+According to the schema, the researchers employed four devices to track the movements of the subjects:
+
+* Arm-band -> Placed in the arm.
+
+* Belt -> Placed in the elbow.
+
+* Glove -> Placed in the hand.
+
+* Dumbbell -> The weight the subject lift.
+
+We have kept the most representative variables for any of the points in the schema and we have ended up with the next variables: 
+
+```{r, echo=FALSE}
+library(caret)
+names(training2)
+```
+
+The variables that will be included in the model are related with the angle, position and acceleration of the four devices installed in the subject. Performing a Principal Component Analysis (PCA), we get the next results:
+
+```{r, echo=FALSE}
+library(caret)
+preProcess(training2[,!(names(training2) %in% "classe")], method = "pca", thresh = 0.95)
+```
+
+The analysis shows that 23 components relating the 48 variables would be enough to explain the variation of the outcome in a 95%; so that, if we use these variables already selected, we will get high accurate results in our predictions.
+
+Before training the model, we will split the training data into two sets to be able to validate the model. 70% of the data will be assign to the training set and 30% to the testing set.
+
+```{r, echo=FALSE}
+inTrain <- createDataPartition(training2$classe, p = 0.75, list = FALSE)
+newtraining <-  training2[ inTrain,]
+newtesting <- training2[-inTrain,]
+```
+
+To classify into the exercises we should use a classification method. We will use a k nearest neighbours model. This model assess the minimal distance to the k nearest neighbours and assign the exercise to that classe which is more likely to belong.
+
+```{r, echo=FALSE}
+start.time <- Sys.time()
+knnFit <- train(classe~., data = newtraining, 
+                 method = "knn", preProcess=c("pca"), 
+                 trControl = trainControl(method = "cv"))
+end.time <- Sys.time()
+time.taken <- end.time - start.time
+knnFit
+time.taken
+```
+
+The model trained took 5, 7 and 9 nearest neighbourgs. This model split the data into 10 folds to make cross-validation and take a mean solution over the 10 subsets. Its optimal accuracy is given to 5 nearest neighbourgs and its value is 0.958 and it took over 30 seconds to train the model.
+
+If we see how well our model predicts the training set (as we have no outcome values for the testing set), we will get the next confussion Matrix:
+
+```{r, echo=FALSE}
+predictions <- predict(knnFit,newtesting[,!(names(newtesting) %in% "classe")])
+xtab <- table(predictions,newtesting$classe)
+confusionMatrix(xtab)
+```
+
+This matrix gives a very good accuracy on the training set and this could mean that the model overfits the training data. Moreover, we could easily see that the results for every exercise are very good and very few are bad classified.
+
+The out of sample error could be obtained using the accuracy given by the confussion matrix. In this case, we get a very low error (around 4%)
+
+```{r, echo=FALSE}
+paste("Out of sample error =",(1 - 0.96)*100,"%")
+```
+
+To assure this model is not leading to an overfit of the training dataset, we will evaluate the accuracy of the model predicting the exercises performed in the testing dataset by contrasting the results got with the quizz in the platform Coursera. The results from the quizz told us that the model works fine.
+
+```{r, echo=FALSE}
+testing2 <- testing[,names(testing) %in% varNames]
+predict(knnFit,testing2)
+```
